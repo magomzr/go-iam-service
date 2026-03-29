@@ -152,3 +152,13 @@ func GenerateSecureToken() (string, error) {
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
+
+func NewManagerFromKeys(privateKey *rsa.PrivateKey, publicKey *rsa.PublicKey, keyID string, accessTTL, refreshTTL time.Duration) *Manager {
+	return &Manager{
+		privateKey: privateKey,
+		publicKey:  publicKey,
+		keyID:      keyID,
+		accessTTL:  accessTTL,
+		refreshTTL: refreshTTL,
+	}
+}
