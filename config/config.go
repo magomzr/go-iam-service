@@ -1,6 +1,10 @@
 package config
 
-import "github.com/caarlos0/env/v11"
+import (
+	"strings"
+
+	"github.com/caarlos0/env/v11"
+)
 
 type Config struct {
 	// Server
@@ -22,6 +26,10 @@ type Config struct {
 	// Rate limiting
 	RateLimitRequests int `env:"RATE_LIMIT_REQUESTS" envDefault:"10"`
 	RateLimitWindowS  int `env:"RATE_LIMIT_WINDOW_S"  envDefault:"60"`
+
+	// CORS — comma-separated list of allowed origins
+	// In production, set this to your actual frontend origin(s)
+	CORSAllowedOrigins string `env:"CORS_ALLOWED_ORIGINS" envDefault:"http://localhost:4200"`
 }
 
 func Load() (*Config, error) {
@@ -30,4 +38,14 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func (c *Config) CORSOriginsList() []string {
+	var origins []string
+	for _, o := range strings.Split(c.CORSAllowedOrigins, ",") {
+		if s := strings.TrimSpace(o); s != "" {
+			origins = append(origins, s)
+		}
+	}
+	return origins
 }

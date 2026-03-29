@@ -8,6 +8,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const maxBodyBytes = 1 << 20 // 1 MB
+
 type Handler struct {
 	service *Service
 }
@@ -29,6 +31,8 @@ func (h *Handler) ListRoles(w http.ResponseWriter, r *http.Request) {
 
 // POST /admin/roles
 func (h *Handler) CreateRole(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+
 	var body struct {
 		Name        string  `json:"name"`
 		Description *string `json:"description"`
@@ -36,6 +40,11 @@ func (h *Handler) CreateRole(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
 		respondError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	if len(body.Name) > 64 {
+		respondError(w, http.StatusBadRequest, "name must be 64 characters or fewer")
 		return
 	}
 
@@ -77,6 +86,8 @@ func (h *Handler) ListPermissions(w http.ResponseWriter, r *http.Request) {
 
 // POST /admin/permissions
 func (h *Handler) CreatePermission(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+
 	var body struct {
 		Action   string `json:"action"`
 		Resource string `json:"resource"`
@@ -84,6 +95,11 @@ func (h *Handler) CreatePermission(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Action == "" || body.Resource == "" {
 		respondError(w, http.StatusBadRequest, "action and resource are required")
+		return
+	}
+
+	if len(body.Action) > 64 || len(body.Resource) > 64 {
+		respondError(w, http.StatusBadRequest, "action and resource must be 64 characters or fewer")
 		return
 	}
 
@@ -120,6 +136,7 @@ func (h *Handler) AssignPermissionToRole(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var body struct {
 		PermissionID string `json:"permission_id"`
 	}
@@ -183,6 +200,7 @@ func (h *Handler) AssignRoleToUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var body struct {
 		RoleID string `json:"role_id"`
 	}

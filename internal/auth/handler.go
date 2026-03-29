@@ -4,9 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 
 	"github.com/rs/zerolog/log"
 )
+
+const maxBodyBytes = 1 << 20 // 1 MB
+
+var emailRe = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 
 type Handler struct {
 	service      *Service
@@ -19,6 +24,8 @@ func NewHandler(service *Service, tm interface{ JWKS() map[string]any }) *Handle
 
 // POST /auth/register
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+
 	var body struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -34,8 +41,13 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(body.Password) < 8 {
-		respondError(w, http.StatusBadRequest, "password must be at least 8 characters")
+	if !emailRe.MatchString(body.Email) || len(body.Email) > 254 {
+		respondError(w, http.StatusBadRequest, "invalid email")
+		return
+	}
+
+	if len(body.Password) < 8 || len(body.Password) > 72 {
+		respondError(w, http.StatusBadRequest, "password must be between 8 and 72 characters")
 		return
 	}
 
@@ -54,6 +66,8 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 
 // POST /auth/login
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+
 	var body struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -84,6 +98,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 // POST /auth/refresh
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+
 	var body struct {
 		RefreshToken string `json:"refresh_token"`
 	}
@@ -126,6 +142,8 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 
 // POST /auth/change-password
 func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+
 	var body struct {
 		CurrentPassword string `json:"current_password"`
 		NewPassword     string `json:"new_password"`
@@ -136,8 +154,8 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(body.NewPassword) < 8 {
-		respondError(w, http.StatusBadRequest, "new password must be at least 8 characters")
+	if len(body.NewPassword) < 8 || len(body.NewPassword) > 72 {
+		respondError(w, http.StatusBadRequest, "new password must be between 8 and 72 characters")
 		return
 	}
 
