@@ -1,0 +1,18 @@
+# Binaries
+iam-server
+*.exe
+
+# Claves — NUNCA al repositorio
+keys/private.pem
+
+# Environment
+.env
+.env.local
+
+# Go
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp

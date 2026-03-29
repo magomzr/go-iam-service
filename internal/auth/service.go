@@ -1,0 +1,245 @@
+package auth
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/argon2"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
+
+	"github.com/magomzr/go-iam-service/internal/db/sqlcgen"
+	"github.com/magomzr/go-iam-service/internal/token"
+)
+
+var (
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrUserAlreadyExists  = errors.New("user already exists")
+	ErrTokenInvalid       = errors.New("refresh token invalid or expired")
+	ErrTokenReused        = errors.New("refresh token reuse detected — session revoked")
+)
+
+const (
+	argonMemory      uint32 = 64 * 1024
+	argonIterations  uint32 = 3
+	argonParallelism uint8  = 2
+	argonSaltLen            = 16
+	argonKeyLen      uint32 = 32
+)
+
+type Service struct {
+	pool         *pgxpool.Pool
+	queries      *sqlcgen.Queries
+	tokenManager *token.Manager
+	refreshTTL   time.Duration
+}
+
+func NewService(pool *pgxpool.Pool, tm *token.Manager, refreshTTL time.Duration) *Service {
+	return &Service{
+		pool:         pool,
+		queries:      sqlcgen.New(pool),
+		tokenManager: tm,
+		refreshTTL:   refreshTTL,
+	}
+}
+
+type TokenPair struct {
+	AccessToken  string
+	RefreshToken string
+}
+
+func (s *Service) Register(ctx context.Context, email, password string) error {
+	hash, err := hashPassword(password)
+	if err != nil {
+		return fmt.Errorf("hashing password: %w", err)
+	}
+
+	_, err = s.queries.CreateUser(ctx, sqlcgen.CreateUserParams{
+		Email:    email,
+		Password: hash,
+	})
+	if err != nil {
+		if isUniqueViolation(err) {
+			return ErrUserAlreadyExists
+		}
+		return fmt.Errorf("creating user: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) Login(ctx context.Context, email, password string) (*TokenPair, error) {
+	user, err := s.queries.GetUserByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrInvalidCredentials
+		}
+		return nil, fmt.Errorf("fetching user: %w", err)
+	}
+
+	if !verifyPassword(password, user.Password) {
+		return nil, ErrInvalidCredentials
+	}
+
+	return s.issueTokenPair(ctx, user.ID, user.Email)
+}
+
+func (s *Service) Refresh(ctx context.Context, rawRefreshToken string) (*TokenPair, error) {
+	hash := token.HashToken(rawRefreshToken)
+
+	rt, err := s.queries.GetRefreshTokenByHash(ctx, hash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrTokenInvalid
+		}
+		return nil, fmt.Errorf("fetching refresh token: %w", err)
+	}
+
+	if rt.Revoked {
+		_ = s.queries.RevokeTokenFamily(ctx, rt.Family)
+		return nil, ErrTokenReused
+	}
+
+	if time.Now().After(rt.ExpiresAt) {
+		return nil, ErrTokenInvalid
+	}
+
+	if err := s.queries.RevokeRefreshToken(ctx, rt.ID); err != nil {
+		return nil, fmt.Errorf("revoking token: %w", err)
+	}
+
+	user, err := s.queries.GetUserByID(ctx, rt.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("fetching user: %w", err)
+	}
+
+	return s.issueTokenPairWithFamily(ctx, user.ID, user.Email, rt.Family)
+}
+
+func (s *Service) Logout(ctx context.Context, userID uuid.UUID) error {
+	return s.queries.RevokeAllUserTokens(ctx, userID)
+}
+
+func (s *Service) ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword string) error {
+	user, err := s.queries.GetUserByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("fetching user: %w", err)
+	}
+
+	if !verifyPassword(currentPassword, user.Password) {
+		return ErrInvalidCredentials
+	}
+
+	hash, err := hashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("hashing new password: %w", err)
+	}
+
+	if _, err := s.queries.UpdateUserPassword(ctx, sqlcgen.UpdateUserPasswordParams{
+		ID:       userID,
+		Password: hash,
+	}); err != nil {
+		return fmt.Errorf("updating password: %w", err)
+	}
+
+	return s.queries.RevokeAllUserTokens(ctx, userID)
+}
+
+func (s *Service) issueTokenPair(ctx context.Context, userID uuid.UUID, email string) (*TokenPair, error) {
+	family := uuid.New()
+	return s.issueTokenPairWithFamily(ctx, userID, email, family)
+}
+
+func (s *Service) issueTokenPairWithFamily(ctx context.Context, userID uuid.UUID, email string, family uuid.UUID) (*TokenPair, error) {
+	perms, err := s.queries.GetUserPermissions(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("fetching permissions: %w", err)
+	}
+
+	accessToken, err := s.tokenManager.SignAccessToken(userID.String(), email, perms)
+	if err != nil {
+		return nil, fmt.Errorf("signing access token: %w", err)
+	}
+
+	rawRefresh, err := token.GenerateSecureToken()
+	if err != nil {
+		return nil, fmt.Errorf("generating refresh token: %w", err)
+	}
+
+	_, err = s.queries.CreateRefreshToken(ctx, sqlcgen.CreateRefreshTokenParams{
+		UserID:    userID,
+		TokenHash: token.HashToken(rawRefresh),
+		Family:    family,
+		ExpiresAt: time.Now().Add(s.refreshTTL),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("storing refresh token: %w", err)
+	}
+
+	return &TokenPair{
+		AccessToken:  accessToken,
+		RefreshToken: rawRefresh,
+	}, nil
+}
+
+// --- helpers ---
+
+func hashPassword(password string) (string, error) {
+	salt := make([]byte, argonSaltLen)
+	if _, err := rand.Read(salt); err != nil {
+		return "", err
+	}
+
+	hash := argon2.IDKey([]byte(password), salt, argonIterations, argonMemory, argonParallelism, argonKeyLen)
+
+	encoded := fmt.Sprintf("$argon2id$v=19$%s$%s",
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(hash),
+	)
+	return encoded, nil
+}
+
+func verifyPassword(password, encoded string) bool {
+	var saltB64, hashB64 string
+	_, err := fmt.Sscanf(encoded, "$argon2id$v=19$%s$%s", &saltB64, &hashB64)
+	if err != nil {
+		return false
+	}
+
+	salt, err := base64.RawStdEncoding.DecodeString(saltB64)
+	if err != nil {
+		return false
+	}
+
+	expected, err := base64.RawStdEncoding.DecodeString(hashB64)
+	if err != nil {
+		return false
+	}
+
+	actual := argon2.IDKey([]byte(password), salt, argonIterations, argonMemory, argonParallelism, argonKeyLen)
+
+	return subtle.ConstantTimeCompare(actual, expected) == 1
+}
+
+func isUniqueViolation(err error) bool {
+	return err != nil && contains(err.Error(), "23505")
+}
+
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsAt(s, sub))
+}
+
+func containsAt(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
