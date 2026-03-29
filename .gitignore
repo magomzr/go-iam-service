@@ -16,5 +16,3 @@ vendor/
 .idea/
 .vscode/
 *.swp
-keys/private.pem
-.env

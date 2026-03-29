@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -191,7 +192,6 @@ func (s *Service) issueTokenPairWithFamily(ctx context.Context, userID pgtype.UU
 }
 
 // --- helpers ---
-
 func hashPassword(password string) (string, error) {
 	salt := make([]byte, argonSaltLen)
 	if _, err := rand.Read(salt); err != nil {
@@ -208,18 +208,19 @@ func hashPassword(password string) (string, error) {
 }
 
 func verifyPassword(password, encoded string) bool {
-	var saltB64, hashB64 string
-	_, err := fmt.Sscanf(encoded, "$argon2id$v=19$%s$%s", &saltB64, &hashB64)
+	// formato: $argon2id$v=19$<salt>$<hash>
+	parts := strings.Split(encoded, "$")
+	// parts[0]="" parts[1]="argon2id" parts[2]="v=19" parts[3]=salt parts[4]=hash
+	if len(parts) != 5 || parts[1] != "argon2id" || parts[2] != "v=19" {
+		return false
+	}
+
+	salt, err := base64.RawStdEncoding.DecodeString(parts[3])
 	if err != nil {
 		return false
 	}
 
-	salt, err := base64.RawStdEncoding.DecodeString(saltB64)
-	if err != nil {
-		return false
-	}
-
-	expected, err := base64.RawStdEncoding.DecodeString(hashB64)
+	expected, err := base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil {
 		return false
 	}
