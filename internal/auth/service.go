@@ -11,10 +11,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/argon2"
 
 	"github.com/magomzr/go-iam-service/internal/db/sqlcgen"
+	"github.com/magomzr/go-iam-service/internal/pghelper"
 	"github.com/magomzr/go-iam-service/internal/token"
 )
 
@@ -106,7 +108,7 @@ func (s *Service) Refresh(ctx context.Context, rawRefreshToken string) (*TokenPa
 		return nil, ErrTokenReused
 	}
 
-	if time.Now().After(rt.ExpiresAt) {
+	if time.Now().After(pghelper.ToTime(rt.ExpiresAt)) {
 		return nil, ErrTokenInvalid
 	}
 
@@ -123,11 +125,11 @@ func (s *Service) Refresh(ctx context.Context, rawRefreshToken string) (*TokenPa
 }
 
 func (s *Service) Logout(ctx context.Context, userID uuid.UUID) error {
-	return s.queries.RevokeAllUserTokens(ctx, userID)
+	return s.queries.RevokeAllUserTokens(ctx, pghelper.UUID(userID))
 }
 
 func (s *Service) ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword string) error {
-	user, err := s.queries.GetUserByID(ctx, userID)
+	user, err := s.queries.GetUserByID(ctx, pghelper.UUID(userID))
 	if err != nil {
 		return fmt.Errorf("fetching user: %w", err)
 	}
@@ -142,27 +144,27 @@ func (s *Service) ChangePassword(ctx context.Context, userID uuid.UUID, currentP
 	}
 
 	if _, err := s.queries.UpdateUserPassword(ctx, sqlcgen.UpdateUserPasswordParams{
-		ID:       userID,
+		ID:       pghelper.UUID(userID),
 		Password: hash,
 	}); err != nil {
 		return fmt.Errorf("updating password: %w", err)
 	}
 
-	return s.queries.RevokeAllUserTokens(ctx, userID)
+	return s.queries.RevokeAllUserTokens(ctx, pghelper.UUID(userID))
 }
 
-func (s *Service) issueTokenPair(ctx context.Context, userID uuid.UUID, email string) (*TokenPair, error) {
-	family := uuid.New()
+func (s *Service) issueTokenPair(ctx context.Context, userID pgtype.UUID, email string) (*TokenPair, error) {
+	family := pghelper.UUID(uuid.New())
 	return s.issueTokenPairWithFamily(ctx, userID, email, family)
 }
 
-func (s *Service) issueTokenPairWithFamily(ctx context.Context, userID uuid.UUID, email string, family uuid.UUID) (*TokenPair, error) {
+func (s *Service) issueTokenPairWithFamily(ctx context.Context, userID pgtype.UUID, email string, family pgtype.UUID) (*TokenPair, error) {
 	perms, err := s.queries.GetUserPermissions(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("fetching permissions: %w", err)
 	}
 
-	accessToken, err := s.tokenManager.SignAccessToken(userID.String(), email, perms)
+	accessToken, err := s.tokenManager.SignAccessToken(pghelper.ToUUID(userID).String(), email, perms)
 	if err != nil {
 		return nil, fmt.Errorf("signing access token: %w", err)
 	}
@@ -176,7 +178,7 @@ func (s *Service) issueTokenPairWithFamily(ctx context.Context, userID uuid.UUID
 		UserID:    userID,
 		TokenHash: token.HashToken(rawRefresh),
 		Family:    family,
-		ExpiresAt: time.Now().Add(s.refreshTTL),
+		ExpiresAt: pghelper.Timestamptz(time.Now().Add(s.refreshTTL)),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("storing refresh token: %w", err)
@@ -228,11 +230,7 @@ func verifyPassword(password, encoded string) bool {
 }
 
 func isUniqueViolation(err error) bool {
-	return err != nil && contains(err.Error(), "23505")
-}
-
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsAt(s, sub))
+	return err != nil && containsAt(err.Error(), "23505")
 }
 
 func containsAt(s, sub string) bool {
