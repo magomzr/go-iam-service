@@ -2,6 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"time"
@@ -10,9 +13,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/argon2"
-	"crypto/rand"
-	"crypto/subtle"
-	"encoding/base64"
 
 	"github.com/magomzr/go-iam-service/internal/db/sqlcgen"
 	"github.com/magomzr/go-iam-service/internal/token"
