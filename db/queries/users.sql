@@ -14,8 +14,22 @@ WHERE id = $1 AND is_active = true
 LIMIT 1;
 
 -- name: ListUsers :many
-SELECT id, email, is_active, created_at, updated_at FROM users
-ORDER BY created_at DESC;
+SELECT
+    u.id,
+    u.email,
+    u.is_active,
+    u.created_at,
+    u.updated_at,
+    COALESCE(
+        json_agg(json_build_object('id', r.id, 'name', r.name) ORDER BY r.name)
+        FILTER (WHERE r.id IS NOT NULL),
+        '[]'
+    ) AS roles
+FROM users u
+LEFT JOIN user_roles ur ON ur.user_id = u.id
+LEFT JOIN roles r ON r.id = ur.role_id
+GROUP BY u.id
+ORDER BY u.created_at DESC;
 
 -- name: UpdateUserPassword :one
 UPDATE users

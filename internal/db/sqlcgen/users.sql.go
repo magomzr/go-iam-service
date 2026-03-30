@@ -183,8 +183,22 @@ func (q *Queries) GetUserPermissions(ctx context.Context, id pgtype.UUID) ([]str
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, email, is_active, created_at, updated_at FROM users
-ORDER BY created_at DESC
+SELECT
+    u.id,
+    u.email,
+    u.is_active,
+    u.created_at,
+    u.updated_at,
+    COALESCE(
+        json_agg(json_build_object('id', r.id, 'name', r.name) ORDER BY r.name)
+        FILTER (WHERE r.id IS NOT NULL),
+        '[]'
+    ) AS roles
+FROM users u
+LEFT JOIN user_roles ur ON ur.user_id = u.id
+LEFT JOIN roles r ON r.id = ur.role_id
+GROUP BY u.id
+ORDER BY u.created_at DESC
 `
 
 type ListUsersRow struct {
@@ -193,12 +207,10 @@ type ListUsersRow struct {
 	IsActive  bool               `json:"is_active"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	Roles     []byte             `json:"roles"`
 }
 
 // ListUsers
-//
-//	SELECT id, email, is_active, created_at, updated_at FROM users
-//	ORDER BY created_at DESC
 func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 	rows, err := q.db.Query(ctx, listUsers)
 	if err != nil {
@@ -214,6 +226,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Roles,
 		); err != nil {
 			return nil, err
 		}

@@ -209,13 +209,42 @@ func (h *Handler) RevokePermissionFromRole(w http.ResponseWriter, r *http.Reques
 
 // GET /admin/users
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := h.service.ListUsers(r.Context())
+	rows, err := h.service.ListUsers(r.Context())
 	if err != nil {
 		log.Error().Err(err).Msg("list users")
 		respondError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	respondJSON(w, http.StatusOK, users)
+
+	type roleItem struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	type userItem struct {
+		ID        any        `json:"id"`
+		Email     string     `json:"email"`
+		IsActive  bool       `json:"is_active"`
+		CreatedAt any        `json:"created_at"`
+		UpdatedAt any        `json:"updated_at"`
+		Roles     []roleItem `json:"roles"`
+	}
+
+	result := make([]userItem, 0, len(rows))
+	for _, u := range rows {
+		var roles []roleItem
+		if err := json.Unmarshal(u.Roles, &roles); err != nil {
+			roles = []roleItem{}
+		}
+		result = append(result, userItem{
+			ID:        u.ID,
+			Email:     u.Email,
+			IsActive:  u.IsActive,
+			CreatedAt: u.CreatedAt,
+			UpdatedAt: u.UpdatedAt,
+			Roles:     roles,
+		})
+	}
+	respondJSON(w, http.StatusOK, result)
 }
 
 // GET /admin/users/:id/roles
