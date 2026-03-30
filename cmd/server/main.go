@@ -22,6 +22,7 @@ import (
 	"github.com/magomzr/go-iam-service/config"
 	"github.com/magomzr/go-iam-service/internal/auth"
 	internaldb "github.com/magomzr/go-iam-service/internal/db"
+	"github.com/magomzr/go-iam-service/internal/db/sqlcgen"
 	"github.com/magomzr/go-iam-service/internal/roles"
 	"github.com/magomzr/go-iam-service/internal/token"
 )
@@ -50,6 +51,20 @@ func main() {
 		log.Fatal().Err(err).Msg("connecting to database")
 	}
 	defer pool.Close()
+
+	// Limpieza periódica de refresh tokens expirados
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		q := sqlcgen.New(pool)
+		for range ticker.C {
+			if err := q.DeleteExpiredTokens(context.Background()); err != nil {
+				log.Error().Err(err).Msg("cleaning expired tokens")
+			} else {
+				log.Info().Msg("expired refresh tokens cleaned")
+			}
+		}
+	}()
 
 	// Migraciones automáticas al arrancar
 	sqlDB, err := sql.Open("pgx", cfg.DatabaseURL)

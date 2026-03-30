@@ -58,6 +58,8 @@ type TokenPair struct {
 }
 
 func (s *Service) Register(ctx context.Context, email, password string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+
 	hash, err := hashPassword(password)
 	if err != nil {
 		return fmt.Errorf("hashing password: %w", err)
@@ -78,6 +80,8 @@ func (s *Service) Register(ctx context.Context, email, password string) error {
 }
 
 func (s *Service) Login(ctx context.Context, email, password string) (*TokenPair, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+
 	user, err := s.queries.GetUserByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

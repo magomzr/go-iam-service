@@ -105,11 +105,7 @@ func (m *Manager) SignAccessToken(userID, email string, permissions []string) (s
 func (m *Manager) VerifyAccessToken(tokenStr string) (*Claims, error) {
 	t, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
-			alg := fmt.Sprintf("%v", t.Header["alg"])
-			if len(alg) > 16 {
-				alg = alg[:16]
-			}
-			return nil, fmt.Errorf("unexpected signing method: %s", alg)
+			return nil, fmt.Errorf("invalid signing method")
 		}
 		return m.publicKey, nil
 	})

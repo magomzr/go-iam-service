@@ -109,6 +109,11 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(body.RefreshToken) > 128 {
+		respondError(w, http.StatusBadRequest, "invalid refresh token")
+		return
+	}
+
 	pair, err := h.service.Refresh(r.Context(), body.RefreshToken)
 	if err != nil {
 		if errors.Is(err, ErrTokenInvalid) || errors.Is(err, ErrTokenReused) {
