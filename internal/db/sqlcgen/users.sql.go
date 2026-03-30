@@ -7,6 +7,7 @@ package sqlcgen
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -207,7 +208,7 @@ type ListUsersRow struct {
 	IsActive  bool               `json:"is_active"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	Roles     interface{}        `json:"roles"`
+	Roles     json.RawMessage    `json:"roles"`
 }
 
 // ListUsers
