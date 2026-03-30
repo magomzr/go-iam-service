@@ -134,6 +134,23 @@ func (h *Handler) DeletePermission(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// GET /admin/roles/:id/permissions
+func (h *Handler) ListRolePermissions(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid role id")
+		return
+	}
+
+	perms, err := h.service.ListRolePermissions(r.Context(), id)
+	if err != nil {
+		log.Error().Err(err).Msg("list role permissions")
+		respondError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	respondJSON(w, http.StatusOK, perms)
+}
+
 // POST /admin/roles/:id/permissions
 func (h *Handler) AssignPermissionToRole(w http.ResponseWriter, r *http.Request) {
 	roleID, err := parseUUID(chi.URLParam(r, "id"))

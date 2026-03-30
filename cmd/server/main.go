@@ -143,6 +143,7 @@ func main() {
 		r.Get("/admin/roles", rolesHandler.ListRoles)
 		r.Post("/admin/roles", rolesHandler.CreateRole)
 		r.Delete("/admin/roles/{id}", rolesHandler.DeleteRole)
+		r.Get("/admin/roles/{id}/permissions", rolesHandler.ListRolePermissions)
 		r.Post("/admin/roles/{id}/permissions", rolesHandler.AssignPermissionToRole)
 		r.Delete("/admin/roles/{id}/permissions/{pid}", rolesHandler.RevokePermissionFromRole)
 
