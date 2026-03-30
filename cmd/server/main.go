@@ -107,6 +107,10 @@ func main() {
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.Timeout(30 * time.Second))
+	r.Use(chimiddleware.SetHeader("X-Content-Type-Options", "nosniff"))
+	r.Use(chimiddleware.SetHeader("X-Frame-Options", "DENY"))
+	r.Use(chimiddleware.SetHeader("Referrer-Policy", "strict-origin-when-cross-origin"))
+	r.Use(enforceJSONContentType)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSOriginsList(),
 		AllowedMethods:   []string{"GET", "POST", "DELETE", "OPTIONS"},
@@ -187,4 +191,17 @@ func main() {
 	}
 
 	log.Info().Msg("server stopped")
+}
+
+func enforceJSONContentType(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
+			ct := r.Header.Get("Content-Type")
+			if ct != "application/json" {
+				http.Error(w, `{"error":"Content-Type must be application/json"}`, http.StatusUnsupportedMediaType)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }

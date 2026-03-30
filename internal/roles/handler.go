@@ -10,6 +10,8 @@ import (
 
 const maxBodyBytes = 1 << 20 // 1 MB
 
+const errInvalidPermissionID = "invalid permission id"
+
 type Handler struct {
 	service *Service
 }
@@ -38,7 +40,9 @@ func (h *Handler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		Description *string `json:"description"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil || body.Name == "" {
 		respondError(w, http.StatusBadRequest, "name is required")
 		return
 	}
@@ -93,7 +97,9 @@ func (h *Handler) CreatePermission(w http.ResponseWriter, r *http.Request) {
 		Resource string `json:"resource"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Action == "" || body.Resource == "" {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil || body.Action == "" || body.Resource == "" {
 		respondError(w, http.StatusBadRequest, "action and resource are required")
 		return
 	}
@@ -116,7 +122,7 @@ func (h *Handler) CreatePermission(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DeletePermission(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
-		respondError(w, http.StatusBadRequest, "invalid permission id")
+		respondError(w, http.StatusBadRequest, errInvalidPermissionID)
 		return
 	}
 
@@ -140,7 +146,9 @@ func (h *Handler) AssignPermissionToRole(w http.ResponseWriter, r *http.Request)
 	var body struct {
 		PermissionID string `json:"permission_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PermissionID == "" {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil || body.PermissionID == "" {
 		respondError(w, http.StatusBadRequest, "permission_id is required")
 		return
 	}
@@ -204,7 +212,9 @@ func (h *Handler) AssignRoleToUser(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		RoleID string `json:"role_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.RoleID == "" {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil || body.RoleID == "" {
 		respondError(w, http.StatusBadRequest, "role_id is required")
 		return
 	}

@@ -7,13 +7,14 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
-	"fmt"
+	"errors"
 	"math/big"
 	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 )
 
 type Manager struct {
@@ -33,45 +34,45 @@ type Claims struct {
 func NewManager(privateKeyPath, publicKeyPath, keyID string, accessTTL, refreshTTL time.Duration) (*Manager, error) {
 	privBytes, err := os.ReadFile(privateKeyPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading private key: %w", err)
+		return nil, errors.New("reading private key failed")
 	}
 
 	pubBytes, err := os.ReadFile(publicKeyPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading public key: %w", err)
+		return nil, errors.New("reading public key failed")
 	}
 
 	privBlock, _ := pem.Decode(privBytes)
 	if privBlock == nil {
-		return nil, fmt.Errorf("decoding private key PEM")
+		return nil, errors.New("decoding private key PEM failed")
 	}
 
 	privateKey, err := x509.ParsePKCS8PrivateKey(privBlock.Bytes)
 	if err != nil {
 		privateKey, err = x509.ParsePKCS1PrivateKey(privBlock.Bytes)
 		if err != nil {
-			return nil, fmt.Errorf("parsing private key: %w", err)
+			return nil, errors.New("parsing private key failed")
 		}
 	}
 
 	rsaPriv, ok := privateKey.(*rsa.PrivateKey)
 	if !ok {
-		return nil, fmt.Errorf("private key is not RSA")
+		return nil, errors.New("private key is not RSA")
 	}
 
 	pubBlock, _ := pem.Decode(pubBytes)
 	if pubBlock == nil {
-		return nil, fmt.Errorf("decoding public key PEM")
+		return nil, errors.New("decoding public key PEM failed")
 	}
 
 	pubInterface, err := x509.ParsePKIXPublicKey(pubBlock.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("parsing public key: %w", err)
+		return nil, errors.New("parsing public key failed")
 	}
 
 	rsaPub, ok := pubInterface.(*rsa.PublicKey)
 	if !ok {
-		return nil, fmt.Errorf("public key is not RSA")
+		return nil, errors.New("public key is not RSA")
 	}
 
 	return &Manager{
@@ -105,17 +106,18 @@ func (m *Manager) SignAccessToken(userID, email string, permissions []string) (s
 func (m *Manager) VerifyAccessToken(tokenStr string) (*Claims, error) {
 	t, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("invalid signing method")
+			return nil, errors.New("invalid signing method")
 		}
 		return m.publicKey, nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("parsing token: %w", err)
+		log.Debug().Bool("expired", errors.Is(err, jwt.ErrTokenExpired)).Msg("token verification failed")
+		return nil, errors.New("invalid or expired token")
 	}
 
 	claims, ok := t.Claims.(*Claims)
 	if !ok || !t.Valid {
-		return nil, fmt.Errorf("invalid token claims")
+		return nil, errors.New("invalid token claims")
 	}
 
 	return claims, nil
