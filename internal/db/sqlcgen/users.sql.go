@@ -11,6 +11,42 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activateUser = `-- name: ActivateUser :exec
+UPDATE users
+SET is_active = true, updated_at = now()
+WHERE id = $1
+`
+
+// ActivateUser
+//
+//	UPDATE users
+//	SET is_active = true, updated_at = now()
+//	WHERE id = $1
+func (q *Queries) ActivateUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, activateUser, id)
+	return err
+}
+
+const countActiveAdmins = `-- name: CountActiveAdmins :one
+SELECT COUNT(*) FROM users u
+JOIN user_roles ur ON ur.user_id = u.id
+JOIN roles r ON r.id = ur.role_id
+WHERE r.name = 'admin' AND u.is_active = true
+`
+
+// CountActiveAdmins
+//
+//	SELECT COUNT(*) FROM users u
+//	JOIN user_roles ur ON ur.user_id = u.id
+//	JOIN roles r ON r.id = ur.role_id
+//	WHERE r.name = 'admin' AND u.is_active = true
+func (q *Queries) CountActiveAdmins(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveAdmins)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password)
 VALUES ($1, $2)
@@ -54,22 +90,6 @@ WHERE id = $1
 //	WHERE id = $1
 func (q *Queries) DeactivateUser(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deactivateUser, id)
-	return err
-}
-
-const activateUser = `-- name: ActivateUser :exec
-UPDATE users
-SET is_active = true, updated_at = now()
-WHERE id = $1
-`
-
-// ActivateUser
-//
-//	UPDATE users
-//	SET is_active = true, updated_at = now()
-//	WHERE id = $1
-func (q *Queries) ActivateUser(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, activateUser, id)
 	return err
 }
 
