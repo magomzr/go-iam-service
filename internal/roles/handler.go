@@ -2,6 +2,7 @@ package roles
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -217,6 +218,59 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, users)
 }
 
+// GET /admin/users/:id/roles
+func (h *Handler) ListUserRoles(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	roles, err := h.service.ListUserRoles(r.Context(), id)
+	if err != nil {
+		log.Error().Err(err).Msg("list user roles")
+		respondError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	respondJSON(w, http.StatusOK, roles)
+}
+
+// PATCH /admin/users/:id/deactivate
+func (h *Handler) DeactivateUser(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	if err := h.service.DeactivateUser(r.Context(), id); err != nil {
+		if errors.Is(err, ErrLastAdmin) {
+			respondError(w, http.StatusConflict, "cannot deactivate the last active admin")
+			return
+		}
+		log.Error().Err(err).Msg("deactivate user")
+		respondError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// PATCH /admin/users/:id/activate
+func (h *Handler) ActivateUser(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	if err := h.service.ActivateUser(r.Context(), id); err != nil {
+		log.Error().Err(err).Msg("activate user")
+		respondError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // POST /admin/users/:id/roles
 func (h *Handler) AssignRoleToUser(w http.ResponseWriter, r *http.Request) {
 	userID, err := parseUUID(chi.URLParam(r, "id"))
@@ -265,6 +319,10 @@ func (h *Handler) RevokeRoleFromUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.RevokeRoleFromUser(r.Context(), userID, roleID); err != nil {
+		if errors.Is(err, ErrLastAdmin) {
+			respondError(w, http.StatusConflict, "cannot remove the last active admin")
+			return
+		}
 		log.Error().Err(err).Msg("revoke role from user")
 		respondError(w, http.StatusInternalServerError, "internal error")
 		return

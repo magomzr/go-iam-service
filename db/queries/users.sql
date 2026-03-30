@@ -28,6 +28,17 @@ UPDATE users
 SET is_active = false, updated_at = now()
 WHERE id = $1;
 
+-- name: CountActiveAdmins :one
+SELECT COUNT(*) FROM users u
+JOIN user_roles ur ON ur.user_id = u.id
+JOIN roles r ON r.id = ur.role_id
+WHERE r.name = 'admin' AND u.is_active = true;
+
+-- name: ActivateUser :exec
+UPDATE users
+SET is_active = true, updated_at = now()
+WHERE id = $1;
+
 -- name: GetUserPermissions :many
 SELECT DISTINCT
     CAST(p.action || ':' || p.resource AS TEXT) AS permission

@@ -113,7 +113,7 @@ func main() {
 	r.Use(enforceJSONContentType)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSOriginsList(),
-		AllowedMethods:   []string{"GET", "POST", "DELETE", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowCredentials: false,
 		MaxAge:           300,
@@ -152,8 +152,12 @@ func main() {
 		r.Delete("/admin/permissions/{id}", rolesHandler.DeletePermission)
 
 		r.Get("/admin/users", rolesHandler.ListUsers)
+		r.Post("/admin/users", authHandler.Register)
+		r.Get("/admin/users/{id}/roles", rolesHandler.ListUserRoles)
 		r.Post("/admin/users/{id}/roles", rolesHandler.AssignRoleToUser)
 		r.Delete("/admin/users/{id}/roles/{rid}", rolesHandler.RevokeRoleFromUser)
+		r.Patch("/admin/users/{id}/deactivate", rolesHandler.DeactivateUser)
+		r.Patch("/admin/users/{id}/activate", rolesHandler.ActivateUser)
 	})
 
 	// Health check

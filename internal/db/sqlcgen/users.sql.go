@@ -57,6 +57,22 @@ func (q *Queries) DeactivateUser(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const activateUser = `-- name: ActivateUser :exec
+UPDATE users
+SET is_active = true, updated_at = now()
+WHERE id = $1
+`
+
+// ActivateUser
+//
+//	UPDATE users
+//	SET is_active = true, updated_at = now()
+//	WHERE id = $1
+func (q *Queries) ActivateUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, activateUser, id)
+	return err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, password, is_active, created_at, updated_at FROM users
 WHERE email = $1 AND is_active = true
